@@ -8,16 +8,22 @@ hedef metindeki bir sonraki karakterle karşılaştırılır.
 
 ## 1. Teknoloji yığını ve neden bu seçildi
 
+Proje **tamamen ücretsiz ve sadece GitHub üzerinden** yayınlanabilsin diye
+iki parçaya ayrılıyor:
+
 | Katman | Seçim | Neden |
 |---|---|---|
-| Backend | **FastAPI** (Python) | Tek dosyada temiz, tip-güvenli, async destekli, otomatik `/docs` (Swagger) çıkarır. Bu oyunun tüm mantığının backend'de olması gerektiğinden (bkz. §4), backend'in basit ve okunabilir olması kritik. |
-| ORM / DB erişimi | **SQLModel** | SQLAlchemy + Pydantic'i birleştirir, model tanımı = API şeması, ekstra boilerplate yok. |
-| Veritabanı | **SQLite** (geliştirme) → **PostgreSQL** (prod) | SQLite sıfır kurulumla başlamanı sağlar; `DATABASE_URL` değiştirerek tek satırda Postgres'e geçersin (SQLModel/SQLAlchemy ikisini de aynı kodla destekler). |
-| Frontend | **Vanilla HTML/CSS/JS** | Tek buton + bir metin bloğu + basit bir liderlik tablosu için React/Vue gibi bir framework gereksiz ağırlık. Build adımı yok, `index.html`'i açmak yeter. İstersen aynı `app.js` mantığını birebir bir React bileşenine taşıyabilirsin — API sözleşmesi değişmez. |
-| Session taşıma | **İmzalı, httpOnly cookie** (HMAC-SHA256, ek bağımlılık yok) | Kullanıcı girişsiz oynayabiliyor ama sunucu hangi ilerlemenin kime ait olduğunu güvenle biliyor. |
+| Backend (birincil, önerilen) | **Cloudflare Worker + D1** (`worker/`) | GitHub Pages statik dosya dışında bir şey çalıştıramadığı için sunucu mantığı serverless bir platforma taşındı. Cloudflare'ın ücretsiz katmanı kredi kartı istemez, uykuya dalmaz, günde 100.000 istek/gün kotası bu boyuttaki bir proje için fazlasıyla yeterli. D1, SQLite uyumlu, 5GB'a kadar ücretsiz. |
+| Backend (alternatif, kendi sunucunuzda barındırmak isterseniz) | **FastAPI** (Python, `backend/`) | Aynı mantığın Python/SQLModel karşılığı — bir VM'de (örn. Oracle Cloud Always Free) kendi sunucunuzu işletmek isterseniz hâlâ burada duruyor, ama artık ana yol değil. |
+| ORM / DB erişimi | Worker: ham SQL (D1) · FastAPI: **SQLModel** | Worker tarafında D1'in kendi `prepare()/bind()` API'si kullanılıyor (bkz. `worker/src/index.js`); FastAPI tarafında SQLAlchemy + Pydantic'i birleştiren SQLModel. |
+| Frontend | **Vanilla HTML/CSS/JS** | Tek buton + bir metin bloğu + basit bir liderlik tablosu için React/Vue gibi bir framework gereksiz ağırlık. Build adımı yok, `index.html`'i açmak yeter. GitHub Pages'te statik olarak servis edilir. |
+| Session taşıma | **İmzalı, httpOnly cookie** (HMAC-SHA256, ek bağımlılık yok — Worker tarafında Web Crypto `crypto.subtle`, FastAPI tarafında Python `hmac`) | Kullanıcı girişsiz oynayabiliyor ama sunucu hangi ilerlemenin kime ait olduğunu güvenle biliyor. Frontend ve backend artık farklı origin'lerde olduğu için (`github.io` / `workers.dev`) çerez `SameSite=None; Secure` ile taşınıyor. |
 
-Bu yığın "basit, hızlı, temiz" hedefiyle seçildi: tek `pip install`,
-tek `uvicorn` komutu, build adımı olmayan bir frontend.
+`worker/src/index.js`, `backend/main.py`'nin mantığının birebir JavaScript
+portudur — anti-cheat garantileri (bkz. §2 ve §4) ikisinde de aynıdır,
+sadece çalışma zamanı ve depolama farklı. Yayına almak için hangi yolu
+izleyeceğiniz **[DEPLOY.md](DEPLOY.md)**'de anlatılıyor (varsayılan ve
+önerilen: Cloudflare Worker + GitHub Pages, $0 maliyet).
 
 ## 2. Mimari: neden her şey backend'de yaşıyor
 
@@ -27,33 +33,40 @@ yalan söyleyemesin. Bunu sağlamanın tek yolu, oyunun çekirdek
 mantığının istemciye hiç dokunmamasıdır:
 
 ```
-┌─────────────┐        POST /api/roll        ┌──────────────────────┐
-│   Tarayıcı   │ ─────────────────────────────▶│       FastAPI         │
-│  (sadece     │                                │                        │
-│   "zar at"   │        {char, correct,        │  1) secrets.choice()  │
-│   der ve     │◀────── streak, ...}            │     ile rastgele      │
-│   sonucu     │                                │     karakter üret     │
-│   gösterir)  │                                │  2) session'daki      │
-└─────────────┘                                │     current_index'teki │
-                                                 │     hedef karakterle   │
-      cookie: imzalı session_id                 │     karşılaştır        │
-                                                 │  3) streak/best'i DB'de│
-                                                 │     güncelle           │
-                                                 └───────────┬────────────┘
-                                                              │
-                                                    ┌─────────▼─────────┐
-                                                    │  SQLite / Postgres │
-                                                    │  GameSession       │
-                                                    │  LeaderboardEntry  │
-                                                    └────────────────────┘
+┌─────────────┐   POST /api/roll (cross-origin)   ┌───────────────────────┐
+│ Tarayıcı     │ ──────────────────────────────────▶│  Cloudflare Worker    │
+│ (GitHub      │                                     │  (worker/src/index.js)│
+│  Pages'te    │        {char, correct,             │  1) crypto.getRandom  │
+│  sadece      │◀────── streak, ...}                 │     Values ile        │
+│  "zar at"    │                                     │     bias'sız rastgele │
+│  der ve      │                                     │     karakter üret     │
+│  sonucu      │                                     │  2) session'daki      │
+│  gösterir)   │                                     │     current_index'teki│
+└─────────────┘                                     │     hedef karakterle   │
+                                                       │     karşılaştır        │
+      cookie: imzalı session_id (SameSite=None)       │  3) streak/best'i D1'de│
+                                                       │     güncelle           │
+                                                       └───────────┬────────────┘
+                                                                    │
+                                                          ┌─────────▼─────────┐
+                                                          │  Cloudflare D1     │
+                                                          │  game_session      │
+                                                          │  leaderboard_entry │
+                                                          └────────────────────┘
 ```
+
+(`backend/main.py`'yi kendi sunucunuzda çalıştırırsanız aynı diyagram
+geçerli — sadece "Cloudflare Worker" yerine "FastAPI" ve "D1" yerine
+"SQLite/Postgres" okuyun; mantık birebir aynı.)
 
 Somut olarak:
 
-- **Rastgele karakter** `secrets.choice()` ile, yani kriptografik
-  olarak güvenli bir üreteçle sunucuda seçilir. Python'un `random`
-  modülü **kullanılmaz** — o tahmin edilebilir (Mersenne Twister),
-  bu oyun için yeterince güvenli değildir.
+- **Rastgele karakter**, kriptografik olarak güvenli bir üreteçle
+  sunucuda seçilir: Worker'da `crypto.getRandomValues()` + reddetme
+  örneklemesiyle bias'sız seçim (bkz. `worker/src/index.js` içindeki
+  `randomChar()`), FastAPI'de `secrets.choice()`. İkisi de Python'un
+  `random` modülüne (tahmin edilebilir Mersenne Twister) karşılık
+  **kullanılmaz**.
 - **İlerleme (`current_index`) ve seri (`current_streak`)**
   veritabanındaki `GameSession` satırında tutulur, istemciden gelen
   hiçbir alana güvenilmez. `/api/roll` isteğinin gövdesi bile boştur —
@@ -103,11 +116,14 @@ Alınan önlemler ve neyi çözüp neyi çözmediği:
 2. **IP başına sliding-window limiti** (`IP_MAX_REQUESTS_PER_WINDOW`).
    Tek bir session'ı yavaşlatmak yetmez — biri yüzlerce session
    açıp paralel çalıştırabilir. Bu limit aynı IP'den gelen toplam
-   isteği de sınırlar. **Not:** Bu implementasyon bellek-içi
-   (`dict`) ve tek process için yeterlidir; birden fazla worker/pod
-   ile prod'a çıkarken bunu **Redis tabanlı bir token bucket**'a
-   taşıyın (`slowapi` + `redis` kütüphaneleri önerilir), yoksa her
-   worker kendi sayacını tutar ve limit etkisiz kalır.
+   isteği de sınırlar. Cloudflare Worker sürümünde bu D1'deki `ip_hit`
+   tablosunda tutulur (bkz. `worker/schema.sql`) — bellek-içi bir
+   `dict` değil, bu yüzden Worker'ın hangi edge lokasyonuna düştüğünden
+   bağımsız olarak tutarlıdır. FastAPI (alternatif self-host)
+   sürümünde ise hâlâ bellek-içi bir `dict` — tek process için
+   yeterlidir, birden fazla worker/pod'a çıkarken **Redis tabanlı bir
+   token bucket**'a taşıyın (`slowapi` + `redis` kütüphaneleri
+   önerilir).
 3. **Session cookie'si HMAC ile imzalı, `httpOnly`, `SameSite=Lax`.**
    İstemci session_id'yi tahmin edip başka birinin ilerlemesini
    çalamaz ya da sahte bir session_id uydurup direkt veritabanına
@@ -140,9 +156,26 @@ amacı bunu imkansız kılmak değil, tek bir aktörün endüstriyel ölçekte
 (saniyede binlerce istek) bunu bedavaya yapmasını ve **sahte skor
 girişini** engellemektir.
 
-## 5. Kurulum ve çalıştırma
+## 5. Kurulum ve çalıştırma (yerel geliştirme)
 
-### Backend
+### Backend — Cloudflare Worker (önerilen, prod'da kullanılan)
+
+```bash
+cd worker
+npm install
+cp .dev.vars.example .dev.vars    # SECRET_KEY'i istediğiniz gibi değiştirin
+npm run db:init:local              # yerel D1 taklidine şemayı uygular
+npm run dev                        # http://127.0.0.1:8787'de çalışır
+```
+
+İş mantığını (RNG doğruluğu, rate limiting, leaderboard, cookie imzalama)
+gerçek bir Cloudflare hesabı olmadan doğrulayan test paketi:
+
+```bash
+node test/run.mjs
+```
+
+### Backend — FastAPI (alternatif, kendi sunucunuzda barındırmak isterseniz)
 
 ```bash
 cd backend
@@ -158,15 +191,16 @@ Sağlık kontrolü: `curl http://localhost:8000/api/health`
 
 ### Frontend
 
-`frontend/app.js`'teki `API_BASE` varsayılan olarak boştur — yani
-"aynı origin" (prod'da backend, frontend'i kendi servis eder, bkz.
-§8 DEPLOY.md). Frontend'i backend'den ayrı bir statik sunucudan
-çalıştırıyorsanız (bu bölümdeki gibi), `index.html`'e `app.js`'ten
-**önce** şunu ekleyin:
+`frontend/app.js`'teki `API_BASE`, `frontend/config.js`'in doldurduğu
+`window.MONKEY_API_BASE`'den okunur (prod'da GitHub Actions bunu Worker'ın
+gerçek URL'siyle otomatik doldurur, bkz. DEPLOY.md). Yerelde çalıştırmak
+için `frontend/config.js`'i elle düzenleyin:
 
-```html
-<script>window.MONKEY_API_BASE = "http://localhost:8000";</script>
+```js
+window.MONKEY_API_BASE = "http://127.0.0.1:8787"; // Worker: npm run dev
+// ya da: "http://localhost:8000" // FastAPI kullanıyorsanız
 ```
+
 Ardından statik bir sunucuyla açın (doğrudan `file://` ile açmak
 cookie/CORS davranışını bozabilir):
 
@@ -176,38 +210,22 @@ python3 -m http.server 5500
 ```
 
 Tarayıcıda `http://localhost:5500` adresine gidin. Backend'deki
-`FRONTEND_ORIGINS` ortam değişkeninin bu adresi içerdiğinden emin
-olun (varsayılan zaten `localhost:5500` içeriyor).
+`FRONTEND_ORIGINS` değişkeninin bu adresi içerdiğinden emin olun
+(hem `worker/wrangler.toml` hem `backend/.env.example`'da varsayılan
+zaten `localhost:5500` içeriyor).
 
-## 6. Yayına alma (tek ücretsiz VM ile)
+## 6. Yayına alma
 
-`monkeyswritehamlet.com` gibi bir domain alıp bunu neredeyse sıfır
-maliyetle yayınlamak istiyorsanız adım adım **[DEPLOY.md](DEPLOY.md)**'ye
-bakın: kodu GitHub'a atma, Squarespace'ten domain alma, Oracle Cloud'un
-süresiz ücretsiz VM'inde barındırma, `Dockerfile` + `docker-compose.yml`
-ile tek komutla ayağa kaldırma, nginx + Let's Encrypt ile HTTPS ve
-`main`'e her push'ta VM'i otomatik güncelleyen bir GitHub Actions
-workflow'u. Bu depoda zaten hazır:
+**Varsayılan ve önerilen yol: $0 maliyet, sadece GitHub.** Adım adım
+**[DEPLOY.md](DEPLOY.md)**'ye bakın: frontend GitHub Pages'e, backend
+Cloudflare Workers + D1'e gidiyor, `main`'e her push'ta ikisi de GitHub
+Actions ile otomatik güncelleniyor. Domain almanıza, sunucu kiralamanıza
+ya da kredi kartı bilgisi girmenize gerek yok.
 
-- `Dockerfile` — backend + frontend'i tek imajda paketler, SQLite'ı `/data`'ya (kalıcı volume) yazar.
-- `docker-compose.yml` — `.env`'den `SECRET_KEY` okur, portu sadece `127.0.0.1`'e açar (dışarıya tek kapı nginx olsun diye).
-- `deploy/nginx.conf.example` — certbot'un SSL için düzenleyeceği başlangıç config'i.
-- `.github/workflows/deploy.yml` — `main`'e push'ta VM'e SSH'lanıp `git pull` + `docker compose up -d --build` çalıştırır (secrets kurulumu DEPLOY.md §6'da).
-- `.gitignore` — `.env`, `monkey.db`, `data/` gibi commit'lenmemesi gereken dosyaları dışarıda bırakır.
-
-Bu kurulumda (tek VM, düşük trafik) `DATABASE_URL`'i Postgres'e
-çevirmenize ya da IP rate limiter'ı Redis'e taşımanıza **gerek yok**
-— tek process, tek disk, sorun değil. Eğer ileride birden fazla
-worker/instance'a (`uvicorn --workers N` ya da birden fazla makine)
-çıkarsanız, IP rate limiter'ın bellek-içi sözlüğü worker'lar arasında
-paylaşılmayacağından Redis tabanlı bir çözüme geçmeniz gerekir.
-
-Ayrıca dikkat edilmesi gerekenler:
-
-- `SECRET_KEY`'i `python -c "import secrets; print(secrets.token_hex(32))"` ile üretin, koda gömmeyin (`.env` dosyasında tutulur, `.gitignore`'a ekleyin).
-- `COOKIE_SECURE=true` kalsın (HTTPS zorunlu hale gelir).
-- CORS'ta `FRONTEND_ORIGINS`'i gerçek domain'inizle sınırlayın, `*` kullanmayın.
-- Gerçek istemci IP'sinin nginx arkasında da doğru okunması için `Dockerfile`'daki `uvicorn --proxy-headers --forwarded-allow-ips=*` bayrakları zaten ayarlı — bunu değiştirmeyin, yoksa tüm istekler tek bir IP'den geliyormuş gibi görünür ve IP rate limit işe yaramaz hale gelir.
+Kendi sunucunuzda (VM) barındırmayı tercih ederseniz — örn. özel bir
+domain'e bağlamak istiyorsanız — `backend/`, `Dockerfile`,
+`docker-compose.yml` ve `deploy/nginx.conf.example` hâlâ repoda; bu yol
+artık DEPLOY.md'nin ana konusu değil ama dosyalar çalışır durumda kaldı.
 
 ## 7. Dosya yapısı
 
@@ -215,20 +233,29 @@ Ayrıca dikkat edilmesi gerekenler:
 monkey-typewriter/
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml       # main'e push'ta VM'i otomatik günceller
-├── backend/
-│   ├── main.py              # Tüm API — modeller, endpoint'ler, rate limiting, StaticFiles mount
+│       ├── pages.yml          # main'e push'ta frontend'i GitHub Pages'e yayınlar
+│       └── deploy-worker.yml  # main'e push'ta backend'i Cloudflare Worker'a yayınlar
+├── worker/                    # BİRİNCİL backend — Cloudflare Worker + D1
+│   ├── src/index.js           # Tüm API — RNG, session, rate limiting, leaderboard
+│   ├── schema.sql             # D1 tabloları (game_session, leaderboard_entry, ip_hit)
+│   ├── wrangler.toml          # Worker + D1 binding config
+│   ├── package.json
+│   ├── .dev.vars.example
+│   └── test/                  # Cloudflare hesabı gerektirmeyen mantık testleri
+├── backend/                   # Alternatif — FastAPI (kendi sunucunuzda barındırmak isterseniz)
+│   ├── main.py
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
-│   ├── index.html            # Üstte "yazdıklarımız" şeridi, altta Hamlet referans metni
-│   ├── style.css             # Retro daktilo teması
-│   └── app.js                # Sadece görüntüleme + istek tetikleme
+│   ├── index.html             # Üstte "yazdıklarımız" şeridi, altta Hamlet referans metni
+│   ├── style.css              # Retro daktilo teması
+│   ├── config.js              # Deploy anında Worker URL'siyle dolduruluyor (bkz. pages.yml)
+│   └── app.js                 # Sadece görüntüleme + istek tetikleme
 ├── deploy/
-│   └── nginx.conf.example
+│   └── nginx.conf.example     # Sadece FastAPI/VM yolunu kullananlar için
 ├── .gitignore
-├── Dockerfile
-├── docker-compose.yml
-├── DEPLOY.md                 # GitHub'a atma + monkeyswritehamlet.com'u ücretsiz VM'e yayınlama rehberi
+├── Dockerfile                 # Sadece FastAPI/VM yolunu kullananlar için
+├── docker-compose.yml         # Sadece FastAPI/VM yolunu kullananlar için
+├── DEPLOY.md                  # $0 maliyetle GitHub Pages + Cloudflare Workers'a yayınlama rehberi
 └── README.md
 ```
