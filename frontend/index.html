@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sonsuz Maymun Teoremi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- Üst şerit: az önce ürettiğimiz her karakterin ham dökümü (doğru/yanlış hepsi) -->
+<header class="typed-band">
+  <p class="band-label">yazdıklarımız</p>
+  <div class="typed-feed" id="typed-feed" aria-live="off"></div>
+</header>
+
+<main class="paper">
+
+  <div class="title-block">
+    <h1>Sonsuz Maymun Teoremi</h1>
+    <p class="subtitle">Yeterince maymun, yeterince tuş, sonunda Hamlet.</p>
+  </div>
+
+  <section class="stats">
+    <div class="stat">
+      <span class="stat-label">Seri</span>
+      <span class="stat-value" id="streak-value">0</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Rekor</span>
+      <span class="stat-value" id="best-value">0</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Toplam Deneme</span>
+      <span class="stat-value" id="rolls-value">0</span>
+    </div>
+  </section>
+
+  <section class="rolled-char-wrap">
+    <div class="rolled-char" id="rolled-char">&nbsp;</div>
+    <p class="hint">Basmak için düğmeye tıkla ya da klavyeden herhangi bir tuşa bas</p>
+  </section>
+
+  <section class="controls">
+    <button id="roll-button" class="type-button">TUŞA BAS</button>
+  </section>
+
+  <section class="leaderboard">
+    <div class="leaderboard-header">
+      <h2>Liderlik Tablosu</h2>
+      <button id="submit-score-button" class="ghost-button" disabled>Skorumu Gönder</button>
+    </div>
+    <ol id="leaderboard-list" class="leaderboard-list">
+      <li class="leaderboard-empty">Henüz kimse liderlik tablosuna giremedi.</li>
+    </ol>
+  </section>
+
+  <p id="status-line" class="status-line">Bağlanıyor…</p>
+
+</main>
+
+<!-- Alt şerit: hedef metin — Hamlet'in tamamı en baştan, tutturduğumuz kısım vurgulu -->
+<footer class="target-band">
+  <p class="band-label">hamlet — “to be, or not to be”</p>
+  <div class="target-feed" id="target-feed" aria-live="polite">
+    <p class="target-text" id="target-text"></p>
+  </div>
+</footer>
+
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal">
+    <h2>Yeni rekor!</h2>
+    <p id="modal-score-text">Serin: 0 karakter. Liderlik tablosuna girmeye hak kazandın.</p>
+    <form id="nickname-form">
+      <input
+        type="text"
+        id="nickname-input"
+        maxlength="20"
+        placeholder="Takma adın (en fazla 20 karakter)"
+        autocomplete="off"
+        required
+      />
+      <div class="modal-actions">
+        <button type="button" id="modal-cancel" class="ghost-button">Vazgeç</button>
+        <button type="submit" class="type-button small">Gönder</button>
+      </div>
+      <p class="modal-error" id="modal-error"></p>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
