@@ -1,0 +1,57 @@
+name: Deploy Backend (Cloudflare Worker)
+
+# worker/ klasöründe bir değişiklik main'e push'landığında (ya da elle
+# "Run workflow" ile) backend'i Cloudflare Workers'a yayınlar. Ücretsiz
+# *.workers.dev subdomain'i kullanılır — kredi kartı ya da domain gerekmez.
+#
+# BİR KEZLİK KURULUM (bkz. DEPLOY.md § Cloudflare kurulumu):
+#   1. Cloudflare hesabı açın, `wrangler d1 create monkey-db` ile D1
+#      veritabanını oluşturun ve worker/wrangler.toml'daki database_id'yi
+#      güncelleyin.
+#   2. `wrangler d1 execute monkey-db --remote --file=./worker/schema.sql`
+#      ile şemayı bir kez uygulayın.
+#   3. Cloudflare dashboard → My Profile → API Tokens'tan "Edit Cloudflare
+#      Workers" şablonuyla bir token oluşturun (D1:Edit izni de eklenmiş
+#      olmalı).
+#   4. Repo → Settings → Secrets and variables → Actions → şu secret'ları
+#      ekleyin: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, MONKEY_SECRET_KEY
+#      (MONKEY_SECRET_KEY: `python3 -c "import secrets; print(secrets.token_hex(32))"`
+#      ile üretilen rastgele bir dize — oturum çerezlerini imzalamak için).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "worker/**"
+      - ".github/workflows/deploy-worker.yml"
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - name: Kodu çek
+        uses: actions/checkout@v4
+
+      - name: Node kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: SECRET_KEY'i Cloudflare'a yaz
+        # Idempotent: her deploy'da çalışır, GH secret'ı değiştirirseniz
+        # Cloudflare'daki değer de otomatik güncellenir. Değer stdin'den
+        # piped olduğu için Actions loglarına asla yazdırılmaz.
+        run: echo "${{ secrets.MONKEY_SECRET_KEY }}" | npx wrangler secret put SECRET_KEY
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Worker'ı deploy et
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
