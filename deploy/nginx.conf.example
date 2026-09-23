@@ -1,0 +1,17 @@
+# /etc/nginx/sites-available/monkeyswritehamlet.com
+# certbot bu dosyayı otomatik düzenleyip 443/SSL bloğunu ekleyecek,
+# siz sadece bu ilk (80 portlu) hali kurun.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name monkeyswritehamlet.com www.monkeyswritehamlet.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
