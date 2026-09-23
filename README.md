@@ -19,6 +19,8 @@ ediliyor. `app.js`:
 - Üretilen karakteri hedef metindeki bir sonraki karakterle karşılaştırır,
   seriyi (streak) ilerletir ya da sıfırlar.
 - Rekoru (`bestStreak`) tarayıcının `localStorage`'ında saklar.
+- İlerlemeyi bir çubukla (tiradın yüzde kaçı tutturuldu) ve seri/rekor
+  değiştiğinde kısa bir animasyonla gösterir.
 
 **Dürüst olmak gerekirse:** bu, sunucu tarafında doğrulanan bir sistem
 değil. Tamamen istemci tarafında çalıştığı için, tarayıcı konsolunu açıp
@@ -31,12 +33,12 @@ sekmede sıfırdan başlar. Oyunun "dürüst zar" kısmı (rastgele karakter
 
 ## Yayına alma
 
-Tek adım: repo → **Settings → Pages** → "Build and deployment" →
-**Source: Deploy from a branch** → Branch: **main**, klasör: **/ (root)**
-→ Save.
+Site şu anda yayında: **https://bisbilge.github.io/monkeyswritehamlet.com/**
 
-Birkaç dakika içinde site şurada yayında olacak:
-`https://<kullanıcı-adınız>.github.io/monkeyswritehamlet.com/`
+Aynısını başka bir hesapta yapmak isteyen biri için tek adım: repo →
+**Settings → Pages** → "Build and deployment" → **Source: Deploy from a
+branch** → Branch: **main**, klasör: **/ (root)** → Save. (GitHub Pages,
+ücretsiz katmanda yalnızca **public** repolarda çalışıyor.)
 
 Başka hiçbir kurulum, hesap ya da ücret gerekmiyor. `main`'e her push,
 GitHub Pages'i otomatik günceller — ayrıca bir CI/CD workflow'una da
