@@ -1,3 +1,0 @@
-# Yerel `wrangler dev` için: bu dosyayı `.dev.vars` olarak kopyalayın
-# (`.dev.vars` .gitignore'da, asla commit'lenmez).
-SECRET_KEY=dev-only-CHANGE-ME
