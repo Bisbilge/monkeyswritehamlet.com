@@ -1,162 +1,169 @@
-# Yayına alma: monkeyswritehamlet.com
+# Yayına alma: tamamen ücretsiz, sadece GitHub
 
-Kısa özet: Kodu **GitHub'da** tutuyoruz; **Squarespace'ten sadece
-domain'i** alıyoruz (Squarespace'in kendisi Python/FastAPI gibi özel
-sunucu kodu çalıştıramaz — orası bir site oluşturucu, hosting değil);
-uygulamayı **Oracle Cloud'un Always Free VM'inde** barındırıyoruz (bu
-gerçekten süresiz ücretsiz ve SQLite dosyanız için kalıcı disk
-veriyor); ve `main`'e her push'ta VM'i otomatik güncelleyen bir
-**GitHub Actions** workflow'u kuruyoruz.
+Bu proje artık **hiçbir sunucu kiralamadan, domain almadan** yayınlanacak
+şekilde kurulu:
 
-## 0. Neden Oracle Cloud Free Tier?
+- **Frontend** → [GitHub Pages](https://pages.github.com/) (ücretsiz, sınırsız süre, `https://<kullanıcı-adınız>.github.io/monkeyswritehamlet.com/` adresinde).
+- **Backend** (anti-cheat mantığının yaşadığı yer) → [Cloudflare Workers](https://workers.cloudflare.com/) + [D1](https://developers.cloudflare.com/d1/) (ücretsiz katman, kredi kartı gerektirmez, `https://monkey-api.<sizin-subdomain>.workers.dev` adresinde).
+- **CI/CD** → GitHub Actions, `main`'e her push'ta ikisini de otomatik günceller.
 
-| Seçenek | Aylık maliyet | Sorun |
+Toplam maliyet: **$0**. Domain almadığınız için özel bir alan adınız
+olmayacak — oyun `github.io` ve `workers.dev` alt alan adlarında yaşayacak.
+(İleride bir domain almak isterseniz DEPLOY.md'nin sonundaki "Daha sonra
+özel domain eklemek isterseniz" bölümüne bakın — mevcut mimariye kolayca
+eklenebilir.)
+
+## 0. Genel bakış — neden bu iki servis?
+
+| Katman | Servis | Neden ücretsiz/kalıcı |
 |---|---|---|
-| **Oracle Cloud Always Free** | **$0, süresiz** | Kurulumu biraz VPS bilgisi ister (aşağıda adım adım var) |
-| Render free web service | $0 | 15 dk hareketsizlikte uyur, tekrar açılması ~1 dk sürer; disk kalıcı değil, free Postgres 30 günde siliniyor — leaderboard'un periyodik sıfırlanma riski var |
-| Fly.io | ~$2-4/ay | Artık gerçek bir free tier yok, kredi kartı zorunlu |
-| Railway | İlk ay $5 kredi, sonra $1/ay kredi | Pratikte ücretsiz değil |
-| PythonAnywhere | $0 (ama custom domain yok) | Kendi domain'inizi bağlamak için ücretli plana geçmeniz gerekiyor |
+| Statik dosyalar (HTML/CSS/JS) | GitHub Pages | Zaten kullandığınız GitHub hesabıyla geliyor, süresiz ücretsiz, uyku modu yok. |
+| Sunucu mantığı (RNG, session, rate limit, leaderboard) | Cloudflare Workers + D1 | Workers'ın günlük ücretsiz kotası (100.000 istek/gün) bu boyuttaki bir hobi projesi için fazlasıyla yeterli; D1 (SQLite tabanlı) 5GB'a kadar ücretsiz. Render/Fly.io gibi seçeneklerin aksine uykuya dalmıyor, kredi kartı istemiyor. |
 
-Oracle hesabı açarken kredi kartı istiyor (kimlik doğrulama için) ama
-Always Free kaynaklarını kullandığınız sürece hiç ücret kesilmiyor.
-Tek dezavantajı: bazı bölgelerde ücretsiz VM stoğu anlık dolabiliyor,
-birkaç kez denemeniz gerekebilir.
+Backend'i Python/FastAPI'den JavaScript'e taşımamızın tek sebebi bu: GitHub
+Pages sadece statik dosya sunar, Python çalıştıramaz; "tamamen ücretsiz +
+GitHub üzerinden" isteğini karşılamak için sunucu mantığını, aynı güvenlik
+garantileriyle (kriptografik RNG, imzalı session, sunucu-taraflı skor) bir
+Cloudflare Worker'a taşıdık. `worker/src/index.js` dosyası eski
+`backend/main.py`'nin birebir JavaScript karşılığıdır — karşılaştırmak
+isterseniz ikisini yan yana okuyabilirsiniz. (`backend/` klasörü, ileride
+kendi sunucunuzda barındırmak isterseniz diye referans olarak repoda kaldı;
+aşağıdaki adımların hiçbiri ona ihtiyaç duymuyor.)
 
-## 1. GitHub reposu
+## 1. Cloudflare hesabı ve D1 veritabanı (bir kere yapılır)
 
-1. GitHub'da boş bir repo açın (örn. `monkeyswritehamlet`), **private**
-   tutmanızı öneririm (backend kodu public olsa sorun değil ama
-   alışkanlık olarak SECRET_KEY gibi şeylerin hiç commit'lenmemesi
-   gerektiğini `.gitignore` zaten sağlıyor).
-2. Bu klasörü push'layın:
+1. [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) üzerinden
+   ücretsiz bir hesap açın (kredi kartı istemez).
+2. Bilgisayarınızda (bu repo'yu klonladığınız yerde):
    ```bash
-   cd monkey-typewriter
-   git init
-   git add .
-   git commit -m "İlk sürüm"
-   git branch -M main
-   git remote add origin git@github.com:<kullanici-adiniz>/monkeyswritehamlet.git
-   git push -u origin main
+   cd worker
+   npm install       # wrangler'ı indirir
+   npx wrangler login   # tarayıcıda Cloudflare hesabınızla giriş yaptırır
    ```
-   `.gitignore` zaten `.env`, `monkey.db` ve `data/` klasörünü dışarıda
-   bırakıyor — bunları asla commit'lemeyin.
+3. D1 veritabanını oluşturun:
+   ```bash
+   npx wrangler d1 create monkey-db
+   ```
+   Çıktıda şöyle bir satır göreceksiniz:
+   ```
+   database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+   ```
+   Bu `database_id`'yi kopyalayıp `worker/wrangler.toml` dosyasındaki
+   `REPLACE_WITH_YOUR_D1_DATABASE_ID` yerine yapıştırın.
+4. Şemayı (tabloları) bir kere uygulayın:
+   ```bash
+   npx wrangler d1 execute monkey-db --remote --file=./schema.sql
+   ```
+5. `wrangler.toml`'daki `FRONTEND_ORIGINS` değişkenini kendi GitHub
+   kullanıcı adınıza göre kontrol edin — varsayılan
+   `https://bisbilge.github.io` şeklinde; farklıysa güncelleyin (sonunda
+   `/` OLMAMALI, sadece origin).
+6. Cloudflare hesabınızın **Account ID**'sini not edin: Cloudflare
+   dashboard → sağ alt köşe / Workers & Pages sayfasında görünür.
+7. Bir **API token** oluşturun: dashboard → sağ üst profil ikonu → **My
+   Profile → API Tokens → Create Token** → "Edit Cloudflare Workers"
+   şablonunu kullanın. Token'ın izinlerine **D1: Edit**'i de eklediğinizden
+   emin olun (şablon bazen sadece Workers Scripts içerir). Token'ı kopyalayın
+   — bir daha gösterilmeyecek.
 
-## 2. Domain: Squarespace Domains
+Bu adımların tamamı **bir kereliktir**; bundan sonra kod her değiştiğinde
+GitHub Actions otomatik deploy edecek.
 
-1. [domains.squarespace.com](https://domains.squarespace.com) üzerinden
-   `monkeyswritehamlet.com`'u satın al — bunun için bir Squarespace
-   web sitesi planına ihtiyacınız yok, Squarespace domain'i tek
-   başına da satıyor.
-2. Satın aldıktan sonra Squarespace'in domain yönetim panelinden
-   **DNS Settings**'e girin. Oracle VM'inizin IP'sini aldıktan sonra
-   (adım 3) şu kaydı ekleyeceksiniz:
-   - Tip: `A`, Host: `@`, Değer: `<VM'in public IP'si>`
-   - Tip: `A`, Host: `www`, Değer: `<VM'in public IP'si>`
-   (Squarespace'in kendi varsayılan "parking" kayıtlarını silmeniz gerekebilir.)
+## 2. GitHub repo secrets/variables
 
-## 3. Oracle Cloud Always Free VM
+Repo → **Settings → Secrets and variables → Actions**'a gidin.
 
-1. [oracle.com/cloud/free](https://www.oracle.com/cloud/free/) üzerinden
-   hesap açın.
-2. **Instances → Create Instance**: Ubuntu 24.04, shape olarak
-   **VM.Standard.A1.Flex** (ARM, Always Free) seçin — 1 OCPU / 6GB RAM
-   bu oyun için fazlasıyla yeterli (limit 4 OCPU/24GB'a kadar
-   ücretsiz, ihtiyacınız yok).
-3. SSH anahtarınızı ekleyin, instance'ı oluşturun, **public IP**'yi not edin.
-4. **ÖNEMLİ — Oracle'a özgü tuzak:** Port 80/443 iki katmanda da açık
-   olmalı, yoksa siteye hiç erişilemez:
-   - Oracle Console'da: **Networking → Virtual Cloud Networks →
-     (VCN'iniz) → Security Lists** → ingress kuralı ekleyin: `0.0.0.0/0`,
-     TCP, port 80 ve 443.
-   - VM'in içinde (Ubuntu görüntüleri `iptables` ile gelir, varsayılan
-     kurallar sadece SSH'a izin verir):
-     ```bash
-     sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-     sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
-     sudo netfilter-persistent save
-     ```
+**Secrets** sekmesinde şunları ekleyin:
 
-## 4. Uygulamayı VM'e kurma (ilk kurulum, tek seferlik)
+| İsim | Değer |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Adım 1.7'de oluşturduğunuz token |
+| `CLOUDFLARE_ACCOUNT_ID` | Adım 1.6'da not ettiğiniz Account ID |
+| `MONKEY_SECRET_KEY` | `python3 -c "import secrets; print(secrets.token_hex(32))"` ile üretilen rastgele bir dize — session cookie'lerini imzalamak için kullanılır, asla paylaşmayın |
+
+**Variables** sekmesinde (bunlar sır değil, sadece bir yapılandırma):
+
+| İsim | Değer |
+|---|---|
+| `WORKER_URL` | Aşağıdaki adım 3'ten sonra öğreneceğiniz Worker URL'si — şimdilik BOŞ bırakabilirsiniz, adım 4'te ekleyeceğiz. |
+
+## 3. İlk deploy: backend (Worker)
+
+Secrets eklendikten sonra `worker/` klasöründe bir değişiklik push'lamanız
+(ya da Actions sekmesinden elle tetiklemeniz) yeterli:
+
+- GitHub'da repo → **Actions** sekmesi → **Deploy Backend (Cloudflare
+  Worker)** workflow'unu seçip **Run workflow** ile elle çalıştırın (kod
+  zaten repoda, `worker/` klasöründe bir push beklemenize gerek yok).
+- Workflow bitince Cloudflare dashboard → **Workers & Pages** →
+  `monkey-api`'ye tıklayın; oradaki URL'yi kopyalayın (şuna benzer:
+  `https://monkey-api.SIZIN-SUBDOMAIN.workers.dev`).
+
+## 4. Worker URL'sini frontend'e bağlama + GitHub Pages'i aktifleştirme
+
+1. Repo → **Settings → Pages** → "Build and deployment" → **Source**:
+   **GitHub Actions** seçin (bir kereliktir).
+2. Repo → **Settings → Secrets and variables → Actions → Variables**'a
+   dönüp `WORKER_URL` değişkenini adım 3'te kopyaladığınız URL ile
+   güncelleyin (ya da yeni oluşturun).
+3. Actions sekmesinden **Deploy Frontend (GitHub Pages)** workflow'unu elle
+   çalıştırın (`Run workflow`) — bu sefer `config.js` içine gerçek Worker
+   URL'sini gömecek.
+4. Birkaç saniye sonra siteniz şurada olacak:
+   `https://<kullanıcı-adınız>.github.io/monkeyswritehamlet.com/`
+   (repo → Settings → Pages sayfasında da tam URL yazıyor.)
+
+Bundan sonra `main`'e her push'ta:
+- `frontend/` altında bir değişiklik varsa → Pages otomatik güncellenir.
+- `worker/` altında bir değişiklik varsa → Worker otomatik güncellenir.
+
+## 5. Doğrulama
+
+- `https://<kullanıcı-adınız>.github.io/monkeyswritehamlet.com/` açılmalı,
+  "TUŞA BAS" düğmesi çalışmalı, üst şeritte ürettiğiniz karakterler,
+  altta Hamlet metninin ilerlemesi görünmeli.
+- Tarayıcı DevTools → Network sekmesinde `/api/session` ve `/api/roll`
+  isteklerinin `monkey-api...workers.dev` adresine gittiğini ve
+  200/429 dışında bir hata almadığını kontrol edin.
+- Bir seri yapıp liderlik tablosuna skor gönderin, sayfayı yenileyin,
+  skorun kalıcı olduğunu (D1'de saklandığını) doğrulayın.
+- `https://monkey-api.SIZIN-SUBDOMAIN.workers.dev/api/health` adresine
+  gidip `{"status":"ok",...}` gördüğünüzü doğrulayın.
+
+## 6. Yerelde geliştirme (opsiyonel)
 
 ```bash
-ssh ubuntu@<VM_IP>
+# Backend
+cd worker
+cp .dev.vars.example .dev.vars   # SECRET_KEY'i istediğiniz gibi değiştirin
+npm run db:init:local             # yerel D1 taklidine şemayı uygular
+npm run dev                       # http://127.0.0.1:8787'de çalışır
 
-# Docker + compose plugin
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker $USER
-newgrp docker
-
-# Repo'yu GitHub'dan klonlayın (private ise: git clone git@github.com:...
-# için VM'e bir deploy key eklemeniz gerekir — repo Settings → Deploy keys)
-git clone https://github.com/<kullanici-adiniz>/monkeyswritehamlet.git
-cd monkeyswritehamlet
-
-# .env dosyası oluşturun (bu dosya git'e girmez, VM'de elle oluşturuluyor)
-echo "SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')" > .env
-echo "FRONTEND_ORIGINS=https://monkeyswritehamlet.com,https://www.monkeyswritehamlet.com" >> .env
-
-mkdir -p data
-docker compose up -d --build
-curl http://127.0.0.1:8000/api/health   # {"status":"ok",...} görmelisiniz
+# Frontend (ayrı bir terminalde)
+cd frontend
+# config.js'i geçici olarak yerel Worker'a işaret ettirin:
+#   window.MONKEY_API_BASE = "http://127.0.0.1:8787";
+python3 -m http.server 5500
 ```
 
-## 5. nginx + HTTPS (Let's Encrypt)
-
+`worker/test/run.mjs`, gerçek bir Cloudflare hesabına ihtiyaç duymadan
+anti-cheat mantığını (RNG doğruluğu, rate limiting, leaderboard sıralaması,
+cookie imzalama) doğrulayan bağımsız bir test paketidir:
 ```bash
-sudo apt update && sudo apt install -y nginx certbot python3-certbot-nginx
-
-sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/monkeyswritehamlet.com
-sudo ln -s /etc/nginx/sites-available/monkeyswritehamlet.com /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-
-# DNS'in (adım 2) yayılmış olması lazım — "dig monkeyswritehamlet.com" ile kontrol edin
-sudo certbot --nginx -d monkeyswritehamlet.com -d www.monkeyswritehamlet.com
+cd worker && node test/run.mjs
 ```
 
-certbot otomatik olarak nginx config'inizi 443/SSL için düzenler ve
-yenileme cron/systemd-timer'ını kurar — elle bir şey yapmanıza gerek yok.
+## Daha sonra özel domain eklemek isterseniz
 
-## 6. GitHub Actions ile otomatik deploy
+Bu mimariyi bozmadan bir domain (örn. Squarespace'ten aldığınız
+`monkeyswritehamlet.com`) ekleyebilirsiniz:
 
-Bundan sonra `main`'e her push attığınızda VM otomatik güncellensin
-istiyorsanız (`.github/workflows/deploy.yml` depoda hazır):
+- **Frontend için**: repo → Settings → Pages → "Custom domain" alanına
+  domain'inizi yazın, DNS'te GitHub Pages'in istediği CNAME/A kayıtlarını
+  ekleyin ([resmi rehber](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site)).
+- **Backend için**: Cloudflare, Workers'a özel domain bağlamayı da
+  ücretsiz destekler ("Custom Domains" — domain'in DNS'inin Cloudflare
+  üzerinden yönetiliyor olması gerekir).
 
-1. VM'de, GitHub Actions'ın kullanacağı ayrı bir SSH anahtar çifti
-   oluşturun ve public kısmını VM'in `~/.ssh/authorized_keys`'ine ekleyin:
-   ```bash
-   ssh-keygen -t ed25519 -f deploy_key -N "" -C "github-actions-deploy"
-   cat deploy_key.pub >> ~/.ssh/authorized_keys
-   cat deploy_key   # bu private key'i bir sonraki adımda kullanacaksınız
-   ```
-2. GitHub'da repo → **Settings → Secrets and variables → Actions →
-   New repository secret** ile şunları ekleyin:
-   - `DEPLOY_HOST` → VM'in public IP'si (ya da domain'iniz)
-   - `DEPLOY_USER` → `ubuntu`
-   - `DEPLOY_SSH_KEY` → yukarıdaki `deploy_key` private key'in tüm içeriği
-   - `DEPLOY_PATH` → `/home/ubuntu/monkeyswritehamlet` (repo'yu klonladığınız tam yol)
-3. Bundan sonra `main`'e her push, workflow'u tetikler: VM'e SSH'lanır,
-   `git pull` yapar, `docker compose up -d --build` çalıştırır. Actions
-   sekmesinden ilerlemeyi izleyebilirsiniz.
-
-Bu workflow sadece "kodu güncelle"yi otomatize ediyor — VM'in ilk
-kurulumu (adım 4-5) hâlâ elle yapılan, tek seferlik bir iş.
-
-## 7. Kontrol
-
-- `https://monkeyswritehamlet.com` açılmalı, oyun oynanabilmeli.
-- SQLite dosyası `./data/monkey.db`'de kalıcı — konteyner yeniden
-  build olsa (ister elle `docker compose up -d --build`, ister
-  GitHub Actions ile) da silinmez.
-- `./data` klasörünü ara sıra VM dışına yedekleyin
-  (`scp ubuntu@<VM_IP>:~/monkeyswritehamlet/data/monkey.db .`) —
-  tek VM'lik bir kurulumda felaket kurtarma planınız bu.
-
-## Toplam maliyet
-
-**Sadece domain: yılda ~$12-20 (Squarespace .com fiyatı).** Sunucu
-tarafı Oracle Always Free ile $0, GitHub reposu (public ya da private
-fark etmez, Actions'ın ücretsiz kotası bu kadar az kullanım için
-fazlasıyla yeterli) $0. Squarespace'in fiyatı zamanla değişebilir,
-satın almadan hemen önce domains.squarespace.com'dan güncel rakamı
-teyit edin.
+Bu durumda tek maliyet yine sadece domain ücreti olur (~$12-20/yıl),
+sunucu tarafı hâlâ $0 kalır.
