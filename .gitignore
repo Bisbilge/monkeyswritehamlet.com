@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Ortam / sırlar — asla commit'lenmesin
+.env
+
+# Veritabanı ve kalıcı veri
+backend/monkey.db
+data/
+
+# Editör / OS
+.DS_Store
+.vscode/
+.idea/
