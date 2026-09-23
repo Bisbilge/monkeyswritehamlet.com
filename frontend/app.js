@@ -5,11 +5,12 @@
 // hesaplanır; burada tutulan `state` nesnesi yalnızca sunucudan
 // gelen son yanıtın bir yansımasıdır — oyunun "gerçek" kaynağı değil.
 
-// Boş string = "aynı origin" — prod'da frontend'i backend aynı sunucudan
-// servis ettiği için (bkz. main.py'deki StaticFiles mount) varsayılan budur.
-// Frontend'i ayrı bir statik sunucudan (örn. `python -m http.server 5500`)
-// çalıştırıyorsanız index.html'de app.js'ten ÖNCE şunu ekleyin:
-//   <script>window.MONKEY_API_BASE = "http://localhost:8000";</script>
+// Prod'da frontend (GitHub Pages) ve backend (Cloudflare Worker,
+// *.workers.dev) artık FARKLI origin'lerden servis ediliyor — bu yüzden
+// API_BASE, config.js'in doldurduğu window.MONKEY_API_BASE'den okunuyor
+// (bkz. index.html + .github/workflows/pages.yml). Yerelde ayrı bir statik
+// sunucudan çalıştırıyorsanız frontend/config.js'i elle düzenleyip Worker'ın
+// yerel adresini (örn. "http://127.0.0.1:8787") yazabilirsiniz.
 const API_BASE = window.MONKEY_API_BASE || "";
 const CLIENT_THROTTLE_MS = 90; // backend'deki MIN_ROLL_INTERVAL_MS'den biraz gevşek
 
@@ -214,6 +215,10 @@ async function doRoll() {
       setStatus("Devam et…");
     }
 
+    // Seri bozulduysa (ya da tur tamamlandıysa) ve bu rekor leaderboard'a
+    // girmeye yetiyorsa, tam bu anda kullanıcıdan takma ad isteriz —
+    // çünkü bir sonraki atışta current_streak sıfırdan tekrar başlayacak
+    // ama best_streak (dolayısıyla kaydedilecek skor) sunucuda zaten sabitlendi.
     if (!data.correct || data.completed) {
       if (previousStreak > 0 || data.completed) {
         const info = await refreshEligibility();
@@ -269,8 +274,8 @@ async function submitNickname(nickname) {
 els.rollButton.addEventListener("click", doRoll);
 
 window.addEventListener("keydown", (e) => {
-  if (els.modalBackdrop.classList.contains("open")) return;
-  if (e.repeat) return;
+  if (els.modalBackdrop.classList.contains("open")) return; // modal açıkken yazı yazılabilsin
+  if (e.repeat) return; // tuşu basılı tutarak spam atmayı client tarafında da caydır
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   e.preventDefault();
   doRoll();
