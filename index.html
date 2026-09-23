@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%92%3C/text%3E%3C/svg%3E" />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -39,6 +40,13 @@
     </div>
   </section>
 
+  <section class="progress-wrap">
+    <div class="progress-track">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+    <span class="progress-label" id="progress-label">%0 tamamlandı</span>
+  </section>
+
   <section class="rolled-char-wrap">
     <div class="rolled-char" id="rolled-char">&nbsp;</div>
     <p class="hint">Basmak için düğmeye tıkla ya da klavyeden herhangi bir tuşa bas</p>
@@ -48,15 +56,13 @@
     <button id="roll-button" class="type-button">TUŞA BAS</button>
   </section>
 
-  <p class="local-note">Rekorun bu tarayıcıda saklanır (localStorage) — sunucu yok, paylaşılan bir liderlik tablosu yok.</p>
-
   <p id="status-line" class="status-line">Hazır. Tuşa bas.</p>
 
 </main>
 
 <!-- Alt şerit: hedef metin — Hamlet'in tamamı en baştan, tutturduğumuz kısım vurgulu -->
 <footer class="target-band">
-  <p class="band-label">hamlet — “to be, or not to be”</p>
+  <p class="band-label">hamlet — "to be, or not to be"</p>
   <div class="target-feed" id="target-feed" aria-live="polite">
     <p class="target-text" id="target-text"></p>
   </div>
