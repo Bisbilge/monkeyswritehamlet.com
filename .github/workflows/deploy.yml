@@ -1,0 +1,30 @@
+name: Deploy
+
+# main'e her push'ta (veya elle "Run workflow" ile) Oracle VM'e SSH'lanip
+# en son kodu ceker ve docker compose ile yeniden build/ayaga kaldirir.
+# Ilk kurulum (repo'yu VM'e bir kere klonlamak, .env dosyasini olusturmak)
+# hala elle yapiliyor -- bkz. DEPLOY.md. Bu workflow sadece "guncelle"yi
+# otomatize ediyor.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH ile VM'e baglan ve yeniden dagit
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+            git fetch origin main
+            git reset --hard origin/main
+            docker compose up -d --build
+            docker image prune -f
