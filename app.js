@@ -91,6 +91,8 @@ const els = {
   rolledChar: document.getElementById("rolled-char"),
   rollButton: document.getElementById("roll-button"),
   statusLine: document.getElementById("status-line"),
+  progressFill: document.getElementById("progress-fill"),
+  progressLabel: document.getElementById("progress-label"),
 };
 
 const TYPED_LOG_MAX = 3000; // bellek/DOM şişmesin diye üst şeritteki dökümü sınırlıyoruz
@@ -171,10 +173,24 @@ function renderTypedFeed() {
   els.typedFeed.scrollTop = els.typedFeed.scrollHeight;
 }
 
-function renderStats() {
+function pulseStat(el, cls) {
+  el.classList.remove("pulse", "pulse-bad");
+  void el.offsetWidth; // reflow ile animasyonu yeniden tetikle
+  el.classList.add(cls);
+}
+
+function renderStats(changed) {
   els.streak.textContent = state.currentStreak;
   els.best.textContent = state.bestStreak;
   els.rolls.textContent = state.totalRolls;
+
+  const pct = Math.min(100, (state.currentIndex / TARGET_LENGTH) * 100);
+  els.progressFill.style.width = `${pct.toFixed(2)}%`;
+  els.progressLabel.textContent = `%${Math.floor(pct)} tamamlandı`;
+
+  if (changed === "streak-up") pulseStat(els.streak, "pulse");
+  if (changed === "streak-reset") pulseStat(els.streak, "pulse-bad");
+  if (changed === "best") pulseStat(els.best, "pulse");
 }
 
 function flashRolledChar(char, correct) {
@@ -196,13 +212,16 @@ function doRoll() {
   const correct = char === targetChar;
 
   let completed = false;
+  let statChange = null;
 
   if (correct) {
     state.currentIndex += 1;
     state.currentStreak += 1;
+    statChange = "streak-up";
     if (state.currentStreak > state.bestStreak) {
       state.bestStreak = state.currentStreak;
       saveBestStreak(state.bestStreak);
+      statChange = "best";
     }
     if (state.currentIndex >= TARGET_LENGTH) {
       completed = true;
@@ -210,6 +229,7 @@ function doRoll() {
     }
   } else {
     state.currentIndex = 0;
+    if (state.currentStreak > 0) statChange = "streak-reset";
     state.currentStreak = 0;
   }
 
@@ -218,7 +238,7 @@ function doRoll() {
   flashRolledChar(char, correct);
   appendTypedChar(char, correct);
   renderTargetText();
-  renderStats();
+  renderStats(statChange);
 
   if (completed) {
     setStatus("İNANILMAZ! Bütün tiradı hatasız tamamladın!");
