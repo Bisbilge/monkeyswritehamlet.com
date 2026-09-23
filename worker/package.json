@@ -1,0 +1,15 @@
+{
+  "name": "monkey-api-worker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute monkey-db --remote --file=./schema.sql",
+    "db:init:local": "wrangler d1 execute monkey-db --local --file=./schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}
