@@ -1,21 +1,3 @@
-# Python
-__pycache__/
-*.pyc
-.venv/
-venv/
-
-# Node / Cloudflare Worker
-node_modules/
-.wrangler/
-
-# Ortam / sırlar — asla commit'lenmesin
-.env
-.dev.vars
-
-# Veritabanı ve kalıcı veri
-backend/monkey.db
-data/
-
 # Editör / OS
 .DS_Store
 .vscode/
