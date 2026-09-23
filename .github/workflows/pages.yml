@@ -1,0 +1,69 @@
+name: Deploy Frontend (GitHub Pages)
+
+# frontend/ klasöründe bir değişiklik main'e push'landığında (ya da elle
+# "Run workflow" ile) frontend'i GitHub Pages'e yayınlar. Ücretsizdir,
+# sunucu gerektirmez. Backend ayrı bir workflow'la (deploy-worker.yml)
+# Cloudflare Worker'a gider — bkz. DEPLOY.md.
+#
+# BİR KEZLİK KURULUM: repo → Settings → Pages → "Build and deployment" →
+# Source: "GitHub Actions" seçili olmalı (bkz. DEPLOY.md § GitHub Pages).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu çek
+        uses: actions/checkout@v4
+
+      - name: config.js'e Worker URL'sini göm
+        # WORKER_URL, repo → Settings → Secrets and variables → Actions →
+        # Variables sekmesinde tanımlı bir repository variable'dır (sır
+        # değil, herkese açık bir URL olduğu için "variable", "secret" değil).
+        # Henüz tanımlanmadıysa placeholder olduğu gibi kalır — Worker'ı
+        # deploy edip URL'sini öğrendikten sonra bu değişkeni ekleyip
+        # workflow'u yeniden çalıştırın.
+        run: |
+          mkdir -p _site_src
+          cp -r frontend/. _site_src/
+          WORKER_URL="${{ vars.WORKER_URL }}"
+          if [ -n "$WORKER_URL" ]; then
+            sed -i "s#__WORKER_URL__#$WORKER_URL#g" _site_src/config.js
+          else
+            echo "::warning::WORKER_URL repository variable'ı tanımlı değil — config.js placeholder ile yayınlanacak, oyun API'ye bağlanamayacak."
+          fi
+
+      - name: Pages'i yapılandır
+        uses: actions/configure-pages@v5
+
+      - name: Artifact'i yükle
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site_src
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Pages'e yayınla
+        id: deployment
+        uses: actions/deploy-pages@v4
